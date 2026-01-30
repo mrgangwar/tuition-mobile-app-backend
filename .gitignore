@@ -1,0 +1,17 @@
+# Dependency folders
+node_modules/
+
+# Environment variables
+.env
+
+# Uploaded images (Backend space bachaane ke liye)
+uploads/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS specific files
+.DS_Store
+Thumbs.db
