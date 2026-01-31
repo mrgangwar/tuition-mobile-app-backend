@@ -32,13 +32,15 @@ const upload = multer({ storage: storage, limits: { fileSize: 3000000 } });
 // ⭐ FEE CALCULATION HELPER (Enhanced)
 // ==========================================
 const calculateFeeDetails = async (student) => {
+    // Priority: 1. joiningDate (Admin input), 2. createdAt (System default)
     const start = new Date(student.joiningDate || student.createdAt);
     const today = new Date();
     
+    // Total months calculation including the starting month
     let monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
     monthsElapsed = monthsElapsed < 0 ? 0 : monthsElapsed + 1;
 
-    const totalExpected = monthsElapsed * student.feesPerMonth;
+    const totalExpected = monthsElapsed * (student.feesPerMonth || 0);
     
     const paidRecords = await Fee.find({ 
         student: student._id, 
@@ -52,20 +54,24 @@ const calculateFeeDetails = async (student) => {
     return {
         totalDue: totalDue > 0 ? totalDue : 0,
         monthsCount: monthsElapsed,
+        totalPaid: totalPaid,
         paidHistory: paidRecords
     };
 };
 
 // ==========================================
-// 🚀 ADD-ON: STUDENT DASHBOARD DATA ROUTE
+// 🚀 FIXED: STUDENT DASHBOARD DATA ROUTE
 // ==========================================
-// Ye route aapke StudentDashboard.js ke liye compulsory hai
 router.get('/my-status', protect, async (req, res) => {
     try {
+        // Find student by the linked User ID
         const profile = await Student.findOne({ user: req.user._id });
-        if (!profile) return res.status(404).json({ message: "Profile not found" });
+        
+        if (!profile) {
+            return res.status(404).json({ message: "Student profile not found" });
+        }
 
-        const attendanceRecords = await Attendance.find({
+        const attendanceCount = await Attendance.countDocuments({
             tuitionId: profile.tuitionId,
             "records.student": profile._id,
             "records.status": "Present"
@@ -73,16 +79,17 @@ router.get('/my-status', protect, async (req, res) => {
 
         const feeDetails = await calculateFeeDetails(profile);
 
+        // Sending complete profile + calculated fees
         res.json({
-            profile,
-            attendanceCount: attendanceRecords.length,
-            feesHistory: feeDetails.paidHistory.map(f => ({
-                month: f.month,
-                status: f.status
-            }))
+            success: true,
+            profile, // Isme name, fatherName, class, etc. sab hai
+            attendanceCount,
+            totalDue: feeDetails.totalDue,
+            monthsCount: feeDetails.monthsCount,
+            feesHistory: feeDetails.paidHistory
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: "Dashboard sync error: " + err.message });
     }
 });
 
@@ -144,9 +151,6 @@ router.post('/collect-fee', protect, isAdmin, async (req, res) => {
 
         res.status(200).json({ success: true, message: `Fees for ${month} collected!`, feeRecord });
     } catch (err) {
-        if (err.code === 11000) {
-            return res.status(400).json({ error: "Record already exists for this month." });
-        }
         res.status(500).json({ error: "Fee collection failed: " + err.message });
     }
 });
@@ -207,12 +211,26 @@ router.post('/add-student', protect, isAdmin, upload.single('photo'), async (req
     try {
         const userExists = await User.findOne({ email });
         if (userExists) return res.status(400).json({ message: "Email registered" });
+        
         const salt = await bcrypt.genSalt(10);
-        newUser = await User.create({ email, password: await bcrypt.hash(password, salt), role: 'STUDENT', tuitionId: req.user._id });
+        const hashedPassword = await bcrypt.hash(password, salt);
+        
+        newUser = await User.create({ email, password: hashedPassword, role: 'STUDENT', tuitionId: req.user._id });
+        
         const newStudent = await Student.create({
-            user: newUser._id, tuitionId: req.user._id, name, fatherName, collegeName, studentClass, joiningDate,
-            photo: req.file ? `/uploads/${req.file.filename}` : '', parentPhone, batch, feesPerMonth: Number(feesPerMonth)
+            user: newUser._id, 
+            tuitionId: req.user._id, 
+            name, 
+            fatherName, 
+            collegeName, 
+            studentClass, 
+            joiningDate: joiningDate ? new Date(joiningDate) : new Date(),
+            photo: req.file ? `/uploads/${req.file.filename}` : '', 
+            parentPhone, 
+            batch, 
+            feesPerMonth: Number(feesPerMonth)
         });
+        
         sendEmail(email, "Welcome!", `Email: ${email}\nPass: ${password}`).catch(() => {});
         res.status(201).json({ success: true, student: newStudent });
     } catch (err) {
@@ -248,7 +266,7 @@ router.delete('/delete-student/:id', protect, isAdmin, async (req, res) => {
         await Student.findByIdAndDelete(req.params.id);
         await Fee.deleteMany({ student: req.params.id });
         
-        res.json({ success: true, message: "Student and records deleted successfully" });
+        res.json({ success: true, message: "Student deleted successfully" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -297,7 +315,6 @@ router.post('/add-notice', protect, isAdmin, async (req, res) => {
 
 router.get('/notices', protect, async (req, res) => {
     try {
-        // Fix: Dono Admin aur Student notices dekh sakein
         const targetId = req.user.role === 'ADMIN' ? req.user._id : req.user.tuitionId;
         const notices = await Notice.find({ tuitionId: targetId }).sort({ createdAt: -1 });
         res.json(notices);
@@ -323,20 +340,10 @@ router.delete('/notice/:id', protect, isAdmin, async (req, res) => {
 router.get('/app-settings', protect, async (req, res) => {
     try {
         const settings = await Notice.findOne({ type: 'APP_CONFIG' }); 
-        
         if (!settings) {
-            return res.json({
-                latestVersion: '1.0',
-                updateUrl: '',
-                message: 'No updates deployed yet.'
-            });
+            return res.json({ latestVersion: '1.0', updateUrl: '', message: 'No updates deployed yet.' });
         }
-
-        res.json({
-            latestVersion: settings.title,
-            updateUrl: settings.content,
-            message: settings.extraMsg || ''
-        });
+        res.json({ latestVersion: settings.title, updateUrl: settings.content, message: settings.extraMsg || '' });
     } catch (err) {
         res.status(500).json({ error: "Settings fetch failed" });
     }
@@ -345,55 +352,27 @@ router.get('/app-settings', protect, async (req, res) => {
 router.post('/update-app-version', protect, isAdmin, async (req, res) => {
     try {
         const { version, url, msg } = req.body;
-        if (!version || !url) {
-            return res.status(400).json({ error: "Version and URL are required" });
-        }
-        
         const updatedConfig = await Notice.findOneAndUpdate(
             { type: 'APP_CONFIG' },
-            { 
-                type: 'APP_CONFIG',
-                title: version, 
-                content: url, 
-                extraMsg: msg,
-                tuitionId: req.user._id 
-            },
+            { type: 'APP_CONFIG', title: version, content: url, extraMsg: msg, tuitionId: req.user._id },
             { upsert: true, new: true }
         );
-
         res.json({ success: true, message: "New version deployed!", config: updatedConfig });
     } catch (err) {
         res.status(500).json({ error: "Deployment failed: " + err.message });
     }
 });
 
-router.get('/check-update', async (req, res) => {
-    try {
-        const settings = await Notice.findOne({ type: 'APP_CONFIG' });
-        res.json(settings);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // ==========================================
-// 🚀 ADD-ON: ROUTES FOR FEEMANAGER.JS
+// 🚀 FEE MANAGER ADD-ONS
 // ==========================================
 
-// 1. Get monthly status for all students
 router.get('/fees/status/:month', protect, isAdmin, async (req, res) => {
     try {
         const { month } = req.params;
         const students = await Student.find({ tuitionId: req.user._id }).sort({ name: 1 });
-        
         const report = await Promise.all(students.map(async (student) => {
-            const feeRecord = await Fee.findOne({ 
-                student: student._id, 
-                month: month, 
-                status: 'Paid',
-                tuitionId: req.user._id
-            });
-            
+            const feeRecord = await Fee.findOne({ student: student._id, month: month, status: 'Paid', tuitionId: req.user._id });
             return {
                 studentId: student._id,
                 name: student.name,
@@ -409,18 +388,12 @@ router.get('/fees/status/:month', protect, isAdmin, async (req, res) => {
     }
 });
 
-// 2. Mark fee as paid from FeeManager screen
 router.post('/fees/pay', protect, isAdmin, async (req, res) => {
     try {
         const { studentId, month, amount } = req.body;
         const fee = await Fee.findOneAndUpdate(
             { student: studentId, month: month, tuitionId: req.user._id },
-            { 
-                amount: Number(amount), 
-                status: 'Paid', 
-                paymentDate: new Date(),
-                tuitionId: req.user._id 
-            },
+            { amount: Number(amount), status: 'Paid', paymentDate: new Date(), tuitionId: req.user._id },
             { upsert: true, new: true }
         );
         res.json({ success: true, fee });
