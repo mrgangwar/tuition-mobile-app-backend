@@ -3,25 +3,22 @@ const router = express.Router();
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 const Notice = require('../models/Notice'); 
-const Fee = require('../models/Fees'); // ✅ Fees model import kiya
-const User = require('../models/User'); // ✅ Admin details ke liye User model
+const Fee = require('../models/Fees'); 
+const User = require('../models/User'); 
 const { protect } = require('../middleware/authMiddleware');
 
 // ==========================================
 // ⭐ INTERNAL HELPER: FEES CALCULATION
 // ==========================================
 const calculateFeeDetails = async (student) => {
-    // Agar joiningDate nahi hai toh createdAt use karega
     const start = new Date(student.joiningDate || student.createdAt);
     const today = new Date();
     
-    // Months count: Joining se aaj tak kitne mahine hue
     let monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
     monthsElapsed = monthsElapsed < 0 ? 0 : monthsElapsed + 1;
 
     const totalExpected = monthsElapsed * (student.feesPerMonth || 0);
     
-    // Admin dwara approve ki gayi paid fees ka total
     const paidRecords = await Fee.find({ 
         student: student._id, 
         status: 'Paid'
@@ -42,28 +39,25 @@ const calculateFeeDetails = async (student) => {
 // ---------------------------------------------------------
 router.get('/my-status', protect, async (req, res) => {
     try {
-        // req.user.id se student dhoondna
         const profile = await Student.findOne({ user: req.user.id }).populate('admin', 'tuitionName');
         
         if (!profile) {
             return res.status(404).json({ message: "Student profile nahi mili" });
         }
 
-        // Attendance records (Sirf Present wali ginte hain)
         const attendanceCount = await Attendance.countDocuments({
             "records.student": profile._id,
             "records.status": "Present"
         });
 
-        // Automatic Fee Calculation
         const feeDetails = await calculateFeeDetails(profile);
 
         res.json({ 
             profile, 
             tuitionName: profile.admin ? profile.admin.tuitionName : "Academy",
             attendanceCount: attendanceCount,
-            totalDue: feeDetails.totalDue, // Frontend ko pending fees dikhane ke liye
-            feesHistory: feeDetails.paidHistory // Paid months ki list
+            totalDue: feeDetails.totalDue,
+            feesHistory: feeDetails.paidHistory 
         });
     } catch (err) {
         res.status(500).json({ message: "Dashboard error", error: err.message });
@@ -78,8 +72,9 @@ router.get('/notices', protect, async (req, res) => {
         const student = await Student.findOne({ user: req.user.id });
         if (!student) return res.status(404).json({ message: "Student not found" });
 
-        // Sirf apne teacher (admin) ki notices dikhayega
-        const notices = await Notice.find({ tuitionId: student.admin }).sort({ createdAt: -1 }).limit(10);
+        // ✅ FIX: Model mein 'tuitionId' hai, isliye yahan bhi 'tuitionId' use kiya
+        // student.admin mein wahi ID hoti hai jo Notice ke tuitionId mein save hai
+        const notices = await Notice.find({ tuitionId: student.admin }).sort({ date: -1 }).limit(10);
         res.json(notices);
     } catch (err) {
         res.status(500).json({ message: "Notices fetch error", error: err.message });
