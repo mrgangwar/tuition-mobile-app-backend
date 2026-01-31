@@ -148,4 +148,20 @@ router.post('/add-student', protect, isAdmin, upload.single('photo'), async (req
     }
 });
 
+// ============================
+// 👥 GET ALL STUDENTS (For Attendance/List)
+// ============================
+router.get('/students', protect, isAdmin, async (req, res) => {
+    try {
+        // Sirf wahi students dikhao jo is Admin (tuitionId) ke hain
+        const students = await Student.find({ tuitionId: req.user._id })
+            .populate('user', 'email') // User model se email bhi le aao
+            .sort({ name: 1 }); // A-Z format mein list
+            
+        res.json(students);
+    } catch (err) {
+        res.status(500).json({ error: "Students fetch nahi ho paye: " + err.message });
+    }
+});
+
 module.exports = router;
