@@ -42,7 +42,10 @@ router.get('/my-status', protect, async (req, res) => {
         const profile = await Student.findOne({ user: req.user.id }).populate('admin', 'tuitionName');
         
         if (!profile) {
-            return res.status(404).json({ message: "Student profile nahi mili" });
+            return res.status(404).json({ 
+                success: false, 
+                message: "Student profile record not found." 
+            });
         }
 
         const attendanceCount = await Attendance.countDocuments({
@@ -53,6 +56,8 @@ router.get('/my-status', protect, async (req, res) => {
         const feeDetails = await calculateFeeDetails(profile);
 
         res.json({ 
+            success: true,
+            message: "Dashboard status retrieved successfully.",
             profile, 
             tuitionName: profile.admin ? profile.admin.tuitionName : "Academy",
             attendanceCount: attendanceCount,
@@ -60,7 +65,11 @@ router.get('/my-status', protect, async (req, res) => {
             feesHistory: feeDetails.paidHistory 
         });
     } catch (err) {
-        res.status(500).json({ message: "Dashboard error", error: err.message });
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to synchronize dashboard data.", 
+            error: err.message 
+        });
     }
 });
 
@@ -70,14 +79,25 @@ router.get('/my-status', protect, async (req, res) => {
 router.get('/notices', protect, async (req, res) => {
     try {
         const student = await Student.findOne({ user: req.user.id });
-        if (!student) return res.status(404).json({ message: "Student not found" });
+        if (!student) return res.status(404).json({ 
+            success: false, 
+            message: "Authorized student record not found." 
+        });
 
-        // ✅ FIX: Model mein 'tuitionId' hai, isliye yahan bhi 'tuitionId' use kiya
-        // student.admin mein wahi ID hoti hai jo Notice ke tuitionId mein save hai
+        // ✅ FIX: Using 'tuitionId' as per model requirements
         const notices = await Notice.find({ tuitionId: student.admin }).sort({ date: -1 }).limit(10);
-        res.json(notices);
+        
+        res.json({
+            success: true,
+            message: "Notice board updated.",
+            notices
+        });
     } catch (err) {
-        res.status(500).json({ message: "Notices fetch error", error: err.message });
+        res.status(500).json({ 
+            success: false, 
+            message: "Unable to fetch latest notices.", 
+            error: err.message 
+        });
     }
 });
 
@@ -87,12 +107,17 @@ router.get('/notices', protect, async (req, res) => {
 router.get('/profile', protect, async (req, res) => {
     try {
         const profile = await Student.findOne({ user: req.user.id }).populate('admin', 'tuitionName');
-        if (!profile) return res.status(404).json({ message: "Profile not found" });
+        if (!profile) return res.status(404).json({ 
+            success: false, 
+            message: "Profile information could not be retrieved." 
+        });
 
         const attendanceRecords = await Attendance.find({ "records.student": profile._id });
         const feeDetails = await calculateFeeDetails(profile);
 
         res.json({ 
+            success: true,
+            message: "Profile details loaded.",
             profile, 
             tuitionName: profile.admin ? profile.admin.tuitionName : "Academy",
             attendanceCount: attendanceRecords.length,
@@ -100,7 +125,11 @@ router.get('/profile', protect, async (req, res) => {
             feeDetails: feeDetails
         });
     } catch (err) {
-        res.status(500).json({ message: "Server error", error: err.message });
+        res.status(500).json({ 
+            success: false, 
+            message: "Internal server error during profile retrieval.", 
+            error: err.message 
+        });
     }
 });
 
