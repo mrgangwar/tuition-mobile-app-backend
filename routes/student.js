@@ -2,34 +2,68 @@ const express = require('express');
 const router = express.Router();
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
-const Notice = require('../models/Notice'); // ✅ Notices model import karein
-const User = require('../models/User')   // ✅ Admin model settings ke liye
+const Notice = require('../models/Notice'); 
+const Fee = require('../models/Fees'); // ✅ Fees model import kiya
+const User = require('../models/User'); // ✅ Admin details ke liye User model
 const { protect } = require('../middleware/authMiddleware');
+
+// ==========================================
+// ⭐ INTERNAL HELPER: FEES CALCULATION
+// ==========================================
+const calculateFeeDetails = async (student) => {
+    // Agar joiningDate nahi hai toh createdAt use karega
+    const start = new Date(student.joiningDate || student.createdAt);
+    const today = new Date();
+    
+    // Months count: Joining se aaj tak kitne mahine hue
+    let monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
+    monthsElapsed = monthsElapsed < 0 ? 0 : monthsElapsed + 1;
+
+    const totalExpected = monthsElapsed * (student.feesPerMonth || 0);
+    
+    // Admin dwara approve ki gayi paid fees ka total
+    const paidRecords = await Fee.find({ 
+        student: student._id, 
+        status: 'Paid'
+    }).sort({ createdAt: -1 });
+    
+    const totalPaid = paidRecords.reduce((sum, f) => sum + f.amount, 0);
+    const totalDue = totalExpected - totalPaid;
+
+    return {
+        totalDue: totalDue > 0 ? totalDue : 0,
+        monthsCount: monthsElapsed,
+        paidHistory: paidRecords
+    };
+};
 
 // ---------------------------------------------------------
 // 1. DASHBOARD STATUS (Frontend calls /student/my-status)
 // ---------------------------------------------------------
 router.get('/my-status', protect, async (req, res) => {
     try {
-        // Logged-in student ko dhoondna aur uske admin ki details nikalna
+        // req.user.id se student dhoondna
         const profile = await Student.findOne({ user: req.user.id }).populate('admin', 'tuitionName');
         
         if (!profile) {
             return res.status(404).json({ message: "Student profile nahi mili" });
         }
 
-        // Attendance records nikalna (Sirf is student ke liye)
-        const attendanceRecords = await Attendance.find({
+        // Attendance records (Sirf Present wali ginte hain)
+        const attendanceCount = await Attendance.countDocuments({
             "records.student": profile._id,
-            "records.status": "Present" // Sirf present days ginte hain
+            "records.status": "Present"
         });
 
-        // Response waisa hi bhej rahe hain jaisa frontend maang raha hai
+        // Automatic Fee Calculation
+        const feeDetails = await calculateFeeDetails(profile);
+
         res.json({ 
             profile, 
             tuitionName: profile.admin ? profile.admin.tuitionName : "Academy",
-            attendanceCount: attendanceRecords.length,
-            feesHistory: profile.fees || [] // Student model mein fees field honi chahiye
+            attendanceCount: attendanceCount,
+            totalDue: feeDetails.totalDue, // Frontend ko pending fees dikhane ke liye
+            feesHistory: feeDetails.paidHistory // Paid months ki list
         });
     } catch (err) {
         res.status(500).json({ message: "Dashboard error", error: err.message });
@@ -44,16 +78,16 @@ router.get('/notices', protect, async (req, res) => {
         const student = await Student.findOne({ user: req.user.id });
         if (!student) return res.status(404).json({ message: "Student not found" });
 
-        // Sirf wahi notices dikhana jo is student ke admin (teacher) ne daali hain
-        const notices = await Notice.find({ admin: student.admin }).sort({ date: -1 }).limit(10);
+        // Sirf apne teacher (admin) ki notices dikhayega
+        const notices = await Notice.find({ tuitionId: student.admin }).sort({ createdAt: -1 }).limit(10);
         res.json(notices);
     } catch (err) {
-        res.status(500).json({ message: "Notices fetch error" });
+        res.status(500).json({ message: "Notices fetch error", error: err.message });
     }
 });
 
 // ---------------------------------------------------------
-// 3. PROFILE DETAILS (Purana route)
+// 3. PROFILE DETAILS
 // ---------------------------------------------------------
 router.get('/profile', protect, async (req, res) => {
     try {
@@ -61,12 +95,14 @@ router.get('/profile', protect, async (req, res) => {
         if (!profile) return res.status(404).json({ message: "Profile not found" });
 
         const attendanceRecords = await Attendance.find({ "records.student": profile._id });
+        const feeDetails = await calculateFeeDetails(profile);
 
         res.json({ 
             profile, 
             tuitionName: profile.admin ? profile.admin.tuitionName : "Academy",
             attendanceCount: attendanceRecords.length,
-            attendanceHistory: attendanceRecords 
+            attendanceHistory: attendanceRecords,
+            feeDetails: feeDetails
         });
     } catch (err) {
         res.status(500).json({ message: "Server error", error: err.message });
