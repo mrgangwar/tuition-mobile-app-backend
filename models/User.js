@@ -1,4 +1,4 @@
-const mongoose = require('mongoose'); // ✅ Yeh line add kar di taaki 'mongoose is not defined' wali error na aaye
+const mongoose = require('mongoose'); 
 
 const UserSchema = new mongoose.Schema({
     email: { 
@@ -14,6 +14,12 @@ const UserSchema = new mongoose.Schema({
         type: String, 
         enum: ['ADMIN', 'STUDENT'], 
         default: 'STUDENT' 
+    },
+    // ✅ PHASE 2 ADD-ON: Jab koi Teacher (ADMIN) register karega, 
+    // tab uski tuition ka stylish name yahan save hoga.
+    tuitionName: {
+        type: String,
+        required: function() { return this.role === 'ADMIN'; } // Sirf Admin ke liye zaroori hai
     },
     // ✅ PHASE 1 ADD-ON: Yeh Student ko uske specific Teacher se link karega
     tuitionId: { 

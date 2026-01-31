@@ -30,27 +30,22 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage, limits: { fileSize: 3000000 } });
 
 // ==========================================
-// ⭐ FEE CALCULATION HELPER (Updated for New Students)
+// ⭐ FEE CALCULATION HELPER
 // ==========================================
 const calculateFeeDetails = async (student) => {
-    // Nirankar ka join date: Jan 30
     const start = new Date(student.createdAt || student.joiningDate);
     const today = new Date();
     
-    // Mahine calculate karne ka behtar tarika
     let monthsElapsed = (today.getFullYear() - start.getFullYear()) * 12 + (today.getMonth() - start.getMonth());
     
-    // ✅ BADLAOW: Agar student ne isi mahine join kiya hai, toh kam se kam 1 mahine ki fees toh banegi hi
     if (monthsElapsed <= 0) {
         monthsElapsed = 1; 
     } else {
-        // Agar join kiye hue mahine ho gaye hain, toh current month ko include karein
         monthsElapsed += 1;
     }
 
     const totalExpected = monthsElapsed * student.feesPerMonth;
     
-    // Sirf is specific Teacher (tuitionId) aur is Student ke records
     const paidRecords = await Fee.find({ 
         student: student._id, 
         status: 'Paid',
@@ -68,10 +63,13 @@ const calculateFeeDetails = async (student) => {
 };
 
 // ============================
-// 1. ANALYTICS (DASHBOARD)
+// 1. ANALYTICS (DASHBOARD) - Updated for Branding
 // ============================
 router.get('/analytics', protect, isAdmin, async (req, res) => {
     try {
+        // ✅ ADMIN KA BRAND NAME FETCH KIYA
+        const adminProfile = await User.findById(req.user._id).select('tuitionName');
+
         const query = { tuitionId: req.user._id }; 
         const totalStudents = await Student.countDocuments(query);
         
@@ -88,7 +86,6 @@ router.get('/analytics', protect, isAdmin, async (req, res) => {
             presentToday = attendanceRecord.records.filter(r => r.status === 'Present').length;
         }
 
-        // ✅ BADLAOW: Month format ko "Month Year" kiya taaki DB se match ho sake
         const currentMonth = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
         
         const feesPaid = await Fee.find({ 
@@ -99,7 +96,46 @@ router.get('/analytics', protect, isAdmin, async (req, res) => {
         
         const totalCollection = feesPaid.reduce((sum, record) => sum + record.amount, 0);
 
-        res.json({ totalStudents, presentToday, totalCollection });
+        // ✅ Response mein Stats + Brand Name dono hai
+        res.json({ 
+            totalStudents, 
+            presentToday, 
+            totalCollection,
+            tuitionName: adminProfile?.tuitionName || "EduSpark Academy"
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============================
+// 2. STUDENT MY-STATUS (For Student Portal Branding)
+// ============================
+router.get('/my-status', protect, async (req, res) => {
+    try {
+        // Student ki profile dhoondna aur uske Admin se 'tuitionName' nikalna
+        const studentProfile = await Student.findOne({ user: req.user._id })
+            .populate('tuitionId', 'tuitionName'); 
+
+        if (!studentProfile) {
+            return res.status(404).json({ message: "Student profile not found" });
+        }
+
+        const attendanceCount = await Attendance.countDocuments({
+            tuitionId: studentProfile.tuitionId,
+            "records.student": studentProfile._id,
+            "records.status": 'Present'
+        });
+
+        const feesHistory = await Fee.find({ student: studentProfile._id }).sort({ paymentDate: -1 });
+
+        res.json({
+            profile: studentProfile,
+            attendanceCount,
+            feesHistory,
+            // ✅ Student dashboard ko teacher ka brand name mil gaya
+            tuitionName: studentProfile.tuitionId ? studentProfile.tuitionId.tuitionName : "My Coaching"
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -113,7 +149,6 @@ router.get('/pending-fees-list', protect, isAdmin, async (req, res) => {
 
         for (let student of students) {
             const { totalDue, paidHistory } = await calculateFeeDetails(student);
-            // Nirankar yahan tabhi dikhega jab totalDue > 0 ho
             if (totalDue > 0) {
                 pendingList.push({
                     _id: student._id,
@@ -133,7 +168,7 @@ router.get('/pending-fees-list', protect, isAdmin, async (req, res) => {
 });
 
 // ============================
-// 2. STUDENT MANAGEMENT
+// 3. STUDENT MANAGEMENT
 // ============================
 router.post('/add-student', protect, isAdmin, upload.single('photo'), async (req, res) => {
     const { name, email, password, parentPhone, batch, feesPerMonth, fatherName, collegeName, studentClass } = req.body;
@@ -184,7 +219,7 @@ router.get('/students', protect, isAdmin, async (req, res) => {
 });
 
 // ============================
-// 3. ATTENDANCE & 4. FEES
+// 4. ATTENDANCE & 5. FEES
 // ============================
 router.post('/attendance', protect, isAdmin, async (req, res) => {
     const { date, attendanceData } = req.body; 
@@ -206,7 +241,6 @@ router.post('/fees/pay', protect, isAdmin, async (req, res) => {
         const feeUpdate = await Fee.create({
             student: studentId,
             tuitionId: req.user._id,
-            // ✅ BADLAOW: Format "January 2026" ensure kiya
             month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
             amount: Number(amount),
             status: 'Paid',
@@ -219,7 +253,7 @@ router.post('/fees/pay', protect, isAdmin, async (req, res) => {
 });
 
 // ============================
-// 5. NOTICE BOARD
+// 6. NOTICE BOARD
 // ============================
 router.post('/add-notice', protect, isAdmin, async (req, res) => {
     try {
