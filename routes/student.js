@@ -3,7 +3,7 @@ const router = express.Router();
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 const Notice = require('../models/Notice'); // ✅ Notices model import karein
-const Admin = require('../models/Admin');   // ✅ Admin model settings ke liye
+const User = require('../models/User')   // ✅ Admin model settings ke liye
 const { protect } = require('../middleware/authMiddleware');
 
 // ---------------------------------------------------------
