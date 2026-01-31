@@ -56,6 +56,36 @@ const calculateFeeDetails = async (student) => {
     };
 };
 
+// ==========================================
+// 🚀 ADD-ON: STUDENT DASHBOARD DATA ROUTE
+// ==========================================
+// Ye route aapke StudentDashboard.js ke liye compulsory hai
+router.get('/my-status', protect, async (req, res) => {
+    try {
+        const profile = await Student.findOne({ user: req.user._id });
+        if (!profile) return res.status(404).json({ message: "Profile not found" });
+
+        const attendanceRecords = await Attendance.find({
+            tuitionId: profile.tuitionId,
+            "records.student": profile._id,
+            "records.status": "Present"
+        });
+
+        const feeDetails = await calculateFeeDetails(profile);
+
+        res.json({
+            profile,
+            attendanceCount: attendanceRecords.length,
+            feesHistory: feeDetails.paidHistory.map(f => ({
+                month: f.month,
+                status: f.status
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ============================
 // 1. ANALYTICS (DASHBOARD)
 // ============================
@@ -267,6 +297,7 @@ router.post('/add-notice', protect, isAdmin, async (req, res) => {
 
 router.get('/notices', protect, async (req, res) => {
     try {
+        // Fix: Dono Admin aur Student notices dekh sakein
         const targetId = req.user.role === 'ADMIN' ? req.user._id : req.user.tuitionId;
         const notices = await Notice.find({ tuitionId: targetId }).sort({ createdAt: -1 });
         res.json(notices);
@@ -289,13 +320,13 @@ router.delete('/notice/:id', protect, isAdmin, async (req, res) => {
 // ⚙️ 5. APP SETTINGS & UPDATES
 // ============================
 
-router.get('/app-settings', protect, isAdmin, async (req, res) => {
+router.get('/app-settings', protect, async (req, res) => {
     try {
         const settings = await Notice.findOne({ type: 'APP_CONFIG' }); 
         
         if (!settings) {
             return res.json({
-                latestVersion: '1.0.0',
+                latestVersion: '1.0',
                 updateUrl: '',
                 message: 'No updates deployed yet.'
             });
@@ -307,7 +338,7 @@ router.get('/app-settings', protect, isAdmin, async (req, res) => {
             message: settings.extraMsg || ''
         });
     } catch (err) {
-        res.status(500).json({ error: "Settings fetch failed: " + err.message });
+        res.status(500).json({ error: "Settings fetch failed" });
     }
 });
 
