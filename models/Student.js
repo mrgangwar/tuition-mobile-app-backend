@@ -1,13 +1,13 @@
 const mongoose = require('mongoose');
 
 const StudentSchema = new mongoose.Schema({
-    // User account se link karne ke liye
+    // User account (email/password) se link karne ke liye
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    // ⭐ PHASE 1 ADD-ON: Yeh batayega ki yeh student kis teacher ka hai
+    // Yeh batayega ki yeh student kis teacher (Admin) ka hai
     tuitionId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
@@ -20,15 +20,15 @@ const StudentSchema = new mongoose.Schema({
     },
     fatherName: {
         type: String,
-        required: true // Papa ka naam zaroori hai
+        required: true
     },
     studentClass: {
         type: String,
-        required: true // Kaunsi class mein hai
+        required: true
     },
     collegeName: {
         type: String,
-        default: "N/A" // Agar school/college nahi bhara toh N/A dikhayega
+        default: "N/A"
     },
     // Contact & Fees
     parentPhone: {
@@ -46,14 +46,16 @@ const StudentSchema = new mongoose.Schema({
     // Media & System Fields
     photo: {
         type: String, 
-        default: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' // Default Profile Icon
+        default: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png'
     },
+    // ⭐ ADMIN FILL KAREGA: Isi se automatic fees calculate hogi
     joiningDate: {
         type: Date,
-        default: Date.now // Jis din register hoga
+        required: true, // Ab admin ko ise bharna hi hoga
+        default: Date.now 
     }
 }, {
     timestamps: true // Isse createdAt aur updatedAt mil jayenge
 });
 
-module.exports = mongoose.model('Student', StudentSchema);
+module.exports = mongoose.models.Student || mongoose.model('Student', StudentSchema);
