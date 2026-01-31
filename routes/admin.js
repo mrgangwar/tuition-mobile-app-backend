@@ -80,7 +80,7 @@ router.get('/analytics', protect, isAdmin, async (req, res) => {
 });
 
 // ============================
-// 2. NOTICE BOARD (Fixed & Complete)
+// 2. NOTICE BOARD
 // ============================
 router.post('/add-notice', protect, isAdmin, async (req, res) => {
     try {
@@ -98,13 +98,12 @@ router.get('/notices', protect, async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ✅ FIXED: DELETE ROUTE ADDED
 router.delete('/notice/:id', protect, isAdmin, async (req, res) => {
     try {
         const notice = await Notice.findById(req.params.id);
         if (!notice) return res.status(404).json({ message: "Notice not found" });
         if (notice.tuitionId.toString() !== req.user._id.toString()) {
-            return res.status(401).json({ message: "Unauthorized delete attempt" });
+            return res.status(401).json({ message: "Unauthorized" });
         }
         await Notice.findByIdAndDelete(req.params.id);
         res.json({ success: true, message: "Notice deleted" });
@@ -112,22 +111,8 @@ router.delete('/notice/:id', protect, isAdmin, async (req, res) => {
 });
 
 // ============================
-// 3. STUDENT & OTHER ROUTES (As provided before)
+// 3. STUDENT MANAGEMENT
 // ============================
-router.get('/my-status', protect, async (req, res) => {
-    try {
-        const studentProfile = await Student.findOne({ user: req.user._id }).populate('tuitionId', 'tuitionName'); 
-        if (!studentProfile) return res.status(404).json({ message: "Student not found" });
-        const attendanceCount = await Attendance.countDocuments({
-            tuitionId: studentProfile.tuitionId,
-            "records.student": studentProfile._id,
-            "records.status": 'Present'
-        });
-        const feesHistory = await Fee.find({ student: studentProfile._id }).sort({ paymentDate: -1 });
-        res.json({ profile: studentProfile, attendanceCount, feesHistory, tuitionName: studentProfile.tuitionId?.tuitionName || "My Coaching" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 router.post('/add-student', protect, isAdmin, upload.single('photo'), async (req, res) => {
     const { name, email, password, parentPhone, batch, feesPerMonth, fatherName, collegeName, studentClass } = req.body;
     let newUser;
@@ -148,19 +133,30 @@ router.post('/add-student', protect, isAdmin, upload.single('photo'), async (req
     }
 });
 
-// ============================
-// 👥 GET ALL STUDENTS (For Attendance/List)
-// ============================
+// ✅ FETCH ALL STUDENTS
 router.get('/students', protect, isAdmin, async (req, res) => {
     try {
-        // Sirf wahi students dikhao jo is Admin (tuitionId) ke hain
         const students = await Student.find({ tuitionId: req.user._id })
-            .populate('user', 'email') // User model se email bhi le aao
-            .sort({ name: 1 }); // A-Z format mein list
-            
+            .populate('user', 'email')
+            .sort({ name: 1 });
         res.json(students);
     } catch (err) {
-        res.status(500).json({ error: "Students fetch nahi ho paye: " + err.message });
+        res.status(500).json({ error: "Fetch error: " + err.message });
+    }
+});
+
+// ✅ ADDED: SAVE ATTENDANCE
+router.post('/mark-attendance', protect, isAdmin, async (req, res) => {
+    try {
+        const { date, records } = req.body; // records: [{student: id, status: 'Present'}]
+        const attendance = await Attendance.findOneAndUpdate(
+            { date: new Date(date), tuitionId: req.user._id },
+            { records, tuitionId: req.user._id },
+            { upsert: true, new: true }
+        );
+        res.json({ success: true, message: "Attendance saved!", attendance });
+    } catch (err) {
+        res.status(500).json({ error: "Save error: " + err.message });
     }
 });
 
