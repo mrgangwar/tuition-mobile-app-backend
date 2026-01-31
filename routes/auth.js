@@ -50,7 +50,7 @@ router.post('/admin-signup', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
     const { email } = req.body;
     try {
-        const user = await User.findOne({ email: email.toLowerCase() }); 
+        const user = await User.findOne({ email: email.toLowerCase().trim() }); 
         if (!user) return res.status(404).json({ 
             success: false, 
             message: "User not found. Please check your email address." 
